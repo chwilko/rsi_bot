@@ -1,77 +1,104 @@
 import logging
+from time import process_time, time
+from typing import Dict, Optional, Tuple, Union
 
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from bot.common import bot_creds
-from bot.oauth2_tokens import Oauth2Tokens
+from bot.read_price_helper import ReadPriceHelper
+from bot.rsi_counter import relative_strength_index
 
-tasks_logger = logging.getLogger(__name__)
-
-
-CHANNEL_ID = 1254525247038951498
-
-
-""""""
-client_id = bot_creds["PUBLIC_KEY"]
-client_secret = bot_creds["CLIENT_SECRET"]
-redirect_uri = "http://localhost:8000/callback"
-scope = "identify email messages.read messages.write"
-token_url = "https://discord.com/api/oauth2/token"
-""""""
+bot_logger = logging.getLogger(__name__)
 
 
 class Bot:
-    N_SECONDS = 20
+    def __init__(
+        self,
+        bot_token: str,
+        channel_id: Union[int, str],
+        interval: str,
+        n_periods: int,
+        scheduler_cron_kwargs: Optional[Dict],
+        thresholds: Tuple[int, int] = (30, 70),
+    ) -> None:
+        """_summary_
 
-    def __init__(self) -> None:
-        self.scheduler = BlockingScheduler()
-        # Oauth2Tokens()
-        self.scheduler.add_job(
+        Args:
+            bot_token (str): discord bot token
+            channel_id (Union[int, str]): The id of the channel on discord for sending messages by the bot.
+            interval (str): RSI period. See supported periods in ReadPriceHelper.INTERVALS.
+            n_periods (int): Number of periods to count the RSI.
+            scheduler_cron_kwargs (Optional[Dict]): Kwargs for the scheduler from the APScheduler library in cron mode. Defaults to {"minute": "*"}
+            thresholds (Tuple[int, int], optional): Thresholds for RSI indicator. Order does not matter. Defaults to (30, 70).
+        """
+        self.bot_token = bot_token
+        self.channel_id = int(channel_id)
+        self.interval = interval
+        self.n_periods = n_periods
+        self.lower_threshold = min(thresholds)
+        self.upper_threshold = max(thresholds)
+        self.scheduler_cron_kwargs = scheduler_cron_kwargs or {"minute": "*"}
+
+    def _check_rsi(self):
+        """Method with bot logic.
+        This method get data, count relative_strength_index and
+        decide about send message.
+        """
+        start = process_time()
+        helper = ReadPriceHelper(interval=self.interval)
+        now = int(time() * 1000)
+        data = helper.get_intervals_by_periods(now=now, periods=self.n_periods)
+        rsi = round(
+            relative_strength_index(
+                data=data, close_key="closePrice", order_key="startTime"
+            ),
+            5,
+        )
+        if rsi <= self.lower_threshold:
+            message = f"RSI: {rsi} smaller than {self.lower_threshold}"
+        elif rsi >= self.upper_threshold:
+            message = f"RSI: {rsi} greater than {self.upper_threshold}"
+        else:
+            bot_logger.info(msg=f"check_rsi end. RSI: {rsi} is in the interval.")
+            return
+
+        self._send_message(message)
+        end = process_time()
+        bot_logger.info(msg=f"check_rsi end. Message sent in {end - start} seconds.")
+
+    def _send_message(self, message: str):
+        """Method use discord API to send message via bot
+
+        Args:
+            message (str): message to send via bot
+        """
+        url = f"https://discord.com/api/v10/channels/{self.channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {self.bot_token}",
+            "Content-Type": "application/json",
+        }
+        data = {"content": message}
+
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as err:
+            bot_logger.error(f"HTTP error: {err}")
+        except Exception as err:
+            bot_logger.error(f"Error in send message: {err}")
+
+    def run(self):
+        """Run bot with scheduler"""
+        scheduler = BlockingScheduler()
+
+        scheduler.add_job(
             self._check_rsi,
             "cron",
             id="check_rsi",
-            minute="*",
-        )  # ! TODO ustawić czas
+            **self.scheduler_cron_kwargs,
+        )
+        scheduler.start()
 
-        self.scheduler.add_job(
-            self._refresh_token,
-            "cron",
-            id="refresh_token",
-            second="45",
-            minute="*",
-        )  # ! TODO ustawić czas
-
-    def _check_rsi(self):
-        tasks_logger.info(msg="check_rsi begin")
-        # channel_id = CHANNEL_ID
-        # message = 'Regular hourly message'
-        # self._send_message(channel_id, message)
-        tasks_logger.info(msg="check_rsi end")
-
-    def _refresh_token(self):
-        tasks_logger.info(msg="refresh_token begin")
-        # oauth2_tokens = Oauth2Tokens()
-        # if oauth2_tokens.expiry_in(N_SECONDS):
-        #     oauth2_tokens.refresh_access_token()
-        tasks_logger.info(msg="refresh_token end")
-
-    def _send_message(self, channel_id, message):
-        oauth2_tokens = Oauth2Tokens()
-        url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {oauth2_tokens.get_access_token()}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "content": message,
-        }
-        response = requests.post(url, headers=headers, json=payload)
-        return response.json()
-
-    def run(self):
-        self.scheduler.start()
-
-
-if __name__ == "__main__":
-    Bot().run()
+    def run_simple(self):
+        """Run the bot once"""
+        self._check_rsi()

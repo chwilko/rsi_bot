@@ -2,9 +2,24 @@ import pandas as pd
 
 
 def relative_strength_index(
-    data: pd.DataFrame, window: int = 15, *, close_key: str = "Close"
+    data: pd.DataFrame,
+    *,
+    close_key: str = "closePrice",
+    order_key: str = "startTime",
 ) -> float:
-    _delta = data[close_key].diff()
+    """Function count relative_strength_index
+
+    Args:
+        data (pd.DataFrame): _description_
+        close_key (str, optional): Name of column with close prices. Defaults to "closePrice".
+        order_key (str, optional): Name of column with time.
+            This key is for sorting closing prices chronologically.
+            Defaults to "startTime".
+
+    Returns:
+        float: RSI of the given data.
+    """
+    _delta = data.sort_values(order_key)[close_key].diff()
     delta = _delta[~_delta.isna()]
     up_days = delta.copy()
     up_days[delta <= 0] = 0.0
