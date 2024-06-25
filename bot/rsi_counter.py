@@ -10,8 +10,9 @@ def relative_strength_index(
     """Function count relative_strength_index
 
     Args:
-        data (pd.DataFrame): _description_
-        close_key (str, optional): Name of column with close prices. Defaults to "closePrice".
+        data (pd.DataFrame): Data frame with chronological and close data.
+        close_key (str, optional): Name of column with close prices.
+            Defaults to "closePrice".
         order_key (str, optional): Name of column with time.
             This key is for sorting closing prices chronologically.
             Defaults to "startTime".

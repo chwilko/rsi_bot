@@ -13,7 +13,7 @@ COPY main.py /app/main.py
 
 
 RUN poetry config virtualenvs.create false && \
-    poetry install 
+    poetry install --without dev
 
 
 COPY run.sh /app/run.sh

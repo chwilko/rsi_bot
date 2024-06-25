@@ -1,8 +1,12 @@
+import logging
+
 import pandas as pd
 from pybit.unified_trading import HTTP
 
+bot_logger = logging.getLogger(__name__)
 
-class ReadPriceHelper:
+
+class BybitKlineDataFetcher:
     INTERVALS = [
         "1",
         "3",
@@ -58,19 +62,44 @@ class ReadPriceHelper:
         interval: str = "D",
         category: str = "spot",
     ) -> None:
-        assert interval in self.INTERVALS
+        """Class is used to retrieve data from the exchange.
+        You select the rate, category, candle count interval and time range.
+
+        Args:
+            symbol (str, optional): Exchange rate symbol. Defaults to "SOLUSDT".
+            interval (str, optional): candle count interval. Defaults to "D".
+            category (str, optional): category. Defaults to "spot".
+
+        Raises:
+            AttributeError: error is raised
+                if interval is from outside of self.INTERVALS
+        """
+        if interval not in self.INTERVALS:
+            raise AttributeError("interval must be in the self.INTERVALS")
         self.interval = interval
         self.symbol = symbol
         self.category = category
         self.session = HTTP(testnet=False)
 
-    def get_intervals_by_periods(self, now: int, periods: int) -> pd.DataFrame:
-        start = now - periods * self.INTERVALS_IN_MILLISECONDS[self.interval]
-        return self.get_intervals_by_range(start, now)
+    def get_intervals_by_periods(self, end: int, periods: int) -> pd.DataFrame:
+        """Method use API to get data from bybit market.
+        Method get kline data.
+        This method takes the end of the interval and number of periods as arguments.
+
+        Args:
+            now (int): end of the time range in milliseconds.
+            periods (int): number of periods.
+
+        Returns:
+            pd.DataFrame: kline data.
+        """
+        start = end - periods * self.INTERVALS_IN_MILLISECONDS[self.interval]
+        return self.get_intervals_by_range(start, end)
 
     def get_intervals_by_range(self, start: int, end: int) -> pd.DataFrame:
         """Method use API to get data from bybit market.
         Method get kline data.
+        This method takes the beginning and end of the interval as arguments.
 
         Args:
             start (int): start of the time range in milliseconds.
